@@ -82,7 +82,7 @@ class AudiobookshelfPlugin:
             else:
                 # Fallback to urllib
                 req = urllib2.Request(url)
-                for key, value in self.headers.items():
+                for key, value in list(self.headers.items()):
                     req.add_header(key, value)
                     
                 if data and method in ['POST', 'PUT']:
