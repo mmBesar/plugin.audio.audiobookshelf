@@ -29,7 +29,7 @@ jobs:
         
     - name: Check addon for Kodi Omega
       run: kodi-addon-checker --branch=omega .
-      
+
     - name: Check addon structure
       run: |
         echo "Checking required files..."
@@ -40,6 +40,27 @@ jobs:
         test -f resources/lib/service.py || (echo "resources/lib/service.py missing" && exit 1)
         test -f icon.png || (echo "icon.png missing" && exit 1)
         echo "All required files present"
+
+    # Test imports with mocked Kodi modules
+    - name: Test imports
+      run: |
+        cd resources/lib
+        python -c "
+        import sys
+        sys.path.insert(0, '../../tests')  # Add tests directory to path
+        
+        # Import and setup mocks
+        import mock_kodi
+        
+        # Now test imports
+        try:
+            import plugin
+            import service
+            print('✓ All imports successful')
+        except ImportError as e:
+            print(f'✗ Import error: {e}')
+            sys.exit(1)
+        "
         
     - name: Validate Python syntax
       run: |
