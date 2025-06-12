@@ -1,0 +1,79 @@
+name: Build Kodi Add-on
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install kodi-addon-checker
+    
+    - name: Validate Add-on
+      run: |
+        kodi-addon-checker --branch=matrix .
+    
+    - name: Create Add-on Package
+      run: |
+        # Create the addon package
+        ADDON_ID=$(grep -oP 'id="\K[^"]*' addon.xml)
+        VERSION=$(grep -oP 'version="\K[^"]*' addon.xml)
+        
+        # Create package directory
+        mkdir -p dist
+        
+        # Copy addon files
+        cp -r * dist/ 2>/dev/null || true
+        
+        # Remove unnecessary files from package
+        rm -rf dist/.git* dist/dist dist/.github dist/README.md dist/LICENSE 2>/dev/null || true
+        
+        # Create zip file
+        cd dist
+        zip -r "../${ADDON_ID}-${VERSION}.zip" . -x "*.git*" "*.DS_Store*"
+        cd ..
+        
+        # Create addon.xml for repository
+        cat > repository.xml << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <addons>
+        <addon id="${ADDON_ID}" version="${VERSION}">
+        <checksum>$(sha256sum ${ADDON_ID}-${VERSION}.zip | cut -d' ' -f1)</checksum>
+        <size>$(stat -c%s ${ADDON_ID}-${VERSION}.zip)</size>
+        </addon>
+        </addons>
+        EOF
+    
+    - name: Upload Add-on Package
+      uses: actions/upload-artifact@v3
+      with:
+        name: kodi-addon
+        path: |
+          *.zip
+          repository.xml
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *.zip
+          repository.xml
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

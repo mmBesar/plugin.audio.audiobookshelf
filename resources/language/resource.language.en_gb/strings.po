@@ -1,0 +1,170 @@
+# Kodi Media Center language file
+# Addon Name: Audiobookshelf
+# Addon id: plugin.audio.audiobookshelf
+msgid ""
+msgstr ""
+"Project-Id-Version: plugin.audio.audiobookshelf\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: \n"
+"Language-Team: English\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en_GB\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# Categories
+msgctxt "#30001"
+msgid "Server"
+msgstr ""
+
+msgctxt "#30002"
+msgid "Playback"
+msgstr ""
+
+msgctxt "#30003"
+msgid "Interface"
+msgstr ""
+
+# Server Settings
+msgctxt "#30010"
+msgid "Server Configuration"
+msgstr ""
+
+msgctxt "#30011"
+msgid "Server URL"
+msgstr ""
+
+msgctxt "#30012"
+msgid "URL of your Audiobookshelf server (e.g., http://192.168.1.100:13378)"
+msgstr ""
+
+msgctxt "#30013"
+msgid "API Token"
+msgstr ""
+
+msgctxt "#30014"
+msgid "Your Audiobookshelf API token (found in Settings > Users > API Tokens)"
+msgstr ""
+
+msgctxt "#30015"
+msgid "Test Connection"
+msgstr ""
+
+msgctxt "#30016"
+msgid "Test connection to your Audiobookshelf server"
+msgstr ""
+
+# Playback Settings
+msgctxt "#30020"
+msgid "Playback Options"
+msgstr ""
+
+msgctxt "#30021"
+msgid "Progress Sync Interval"
+msgstr ""
+
+msgctxt "#30022"
+msgid "How often to sync playback progress with the server"
+msgstr ""
+
+msgctxt "#30023"
+msgid "Auto Resume"
+msgstr ""
+
+msgctxt "#30024"
+msgid "Automatically resume episodes from where you left off"
+msgstr ""
+
+msgctxt "#30025"
+msgid "Mark Finished Threshold"
+msgstr ""
+
+msgctxt "#30026"
+msgid "Mark episode as finished when this many seconds remain"
+msgstr ""
+
+# Interface Settings
+msgctxt "#30030"
+msgid "Interface Options"
+msgstr ""
+
+msgctxt "#30031"
+msgid "Show Descriptions"
+msgstr ""
+
+msgctxt "#30032"
+msgid "Show episode descriptions in the interface"
+msgstr ""
+
+msgctxt "#30033"
+msgid "Episodes Per Page"
+msgstr ""
+
+msgctxt "#30034"
+msgid "Maximum number of episodes to show per page"
+msgstr ""
+
+msgctxt "#30035"
+msgid "Sort Episodes"
+msgstr ""
+
+msgctxt "#30036"
+msgid "How to sort episodes in podcast lists"
+msgstr ""
+
+msgctxt "#30037"
+msgid "Newest First"
+msgstr ""
+
+msgctxt "#30038"
+msgid "Oldest First"
+msgstr ""
+
+# Menu Items
+msgctxt "#30100"
+msgid "Podcasts"
+msgstr ""
+
+msgctxt "#30101"
+msgid "Recent Episodes"
+msgstr ""
+
+msgctxt "#30102"
+msgid "In Progress"
+msgstr ""
+
+# Notifications
+msgctxt "#30200"
+msgid "Connection successful"
+msgstr ""
+
+msgctxt "#30201"
+msgid "Connection failed"
+msgstr ""
+
+msgctxt "#30202"
+msgid "Invalid server URL"
+msgstr ""
+
+msgctxt "#30203"
+msgid "Invalid API token"
+msgstr ""
+
+msgctxt "#30204"
+msgid "No podcasts found"
+msgstr ""
+
+msgctxt "#30205"
+msgid "No episodes found"
+msgstr ""
+
+msgctxt "#30206"
+msgid "Playback error"
+msgstr ""
+
+msgctxt "#30207"
+msgid "Progress synced"
+msgstr ""
