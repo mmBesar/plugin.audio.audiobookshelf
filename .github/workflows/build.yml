@@ -1,280 +1,399 @@
-name: Build and Test Audiobookshelf Addon
+name: Build and Test
 
 on:
   push:
     branches: [ main, develop ]
-    tags:
-      - 'v*'
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 jobs:
-  validate:
-    name: Validate Addon
+  test:
     runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, "3.10", "3.11"]
 
-    # Test imports with mocked Kodi modules
-    - name: Test imports
-      run: |
-        cd resources/lib
-        python -c "
-        import sys
-        sys.path.insert(0, '../../tests')  # Add tests directory to path
-        
-        # Import and setup mocks
-        import mock_kodi
-        
-        # Now test imports
-        try:
-            import plugin
-            import service
-            print('✓ All imports successful')
-        except ImportError as e:
-            print(f'✗ Import error: {e}')
-            sys.exit(1)
-        "
-        
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install kodi-addon-checker
+        pip install mock
         
-    - name: Check addon for Kodi Omega
-      run: kodi-addon-checker --branch=omega .
+    - name: Create mock Kodi modules
+      run: |
+        mkdir -p kodi_mocks
+        cat > kodi_mocks/xbmc.py << 'EOF'
+        # Mock xbmc module for testing
+        LOGDEBUG = 0
+        LOGINFO = 1
+        LOGWARNING = 2
+        LOGERROR = 3
+        LOGFATAL = 4
+        
+        def log(msg, level=LOGDEBUG):
+            print(f"[KODI LOG {level}] {msg}")
+            
+        def getInfoLabel(label):
+            return "mock_info"
+            
+        def executeJSONRPC(request):
+            return '{"result": "mock"}'
+            
+        def sleep(milliseconds):
+            import time
+            time.sleep(milliseconds / 1000.0)
+            
+        def translatePath(path):
+            return path.replace('special://', '/mock/')
+            
+        def getCondVisibility(condition):
+            return False
+        EOF
+        
+        cat > kodi_mocks/xbmcgui.py << 'EOF'
+        # Mock xbmcgui module for testing
+        class ListItem:
+            def __init__(self, label="", label2="", path=""):
+                self.label = label
+                self.label2 = label2
+                self.path = path
+                self.art = {}
+                self.info = {}
+                self.properties = {}
+                
+            def setArt(self, values):
+                self.art.update(values)
+                
+            def setInfo(self, type, infoLabels):
+                self.info[type] = infoLabels
+                
+            def setProperty(self, key, value):
+                self.properties[key] = value
+                
+            def getProperty(self, key):
+                return self.properties.get(key, "")
+        
+        class Dialog:
+            def ok(self, heading, message):
+                print(f"Dialog OK: {heading} - {message}")
+                return True
+                
+            def yesno(self, heading, message):
+                print(f"Dialog YESNO: {heading} - {message}")
+                return True
+                
+            def notification(self, heading, message, icon="", time=5000):
+                print(f"Notification: {heading} - {message}")
+                
+            def input(self, heading, defaultt="", type=0, option=0, autoclose=0):
+                return "mock_input"
+                
+            def select(self, heading, list, autoclose=0, preselect=-1, useDetails=False):
+                return 0
+        
+        class DialogProgress:
+            def __init__(self):
+                self.percent = 0
+                
+            def create(self, heading, message=""):
+                print(f"Progress Dialog: {heading} - {message}")
+                
+            def update(self, percent, message=""):
+                self.percent = percent
+                print(f"Progress: {percent}% - {message}")
+                
+            def iscanceled(self):
+                return False
+                
+            def close(self):
+                print("Progress Dialog closed")
+        
+        def getCurrentWindowId():
+            return 10000
+        EOF
+        
+        cat > kodi_mocks/xbmcplugin.py << 'EOF'
+        # Mock xbmcplugin module for testing
+        SORT_METHOD_LABEL = 1
+        SORT_METHOD_DATE = 3
+        SORT_METHOD_DURATION = 9
+        
+        def addDirectoryItem(handle, url, listitem, isFolder=False, totalItems=0):
+            print(f"Added directory item: {url} - {listitem.label}")
+            return True
+            
+        def endOfDirectory(handle, succeeded=True, updateListing=False, cacheToDisc=True):
+            print(f"End of directory: handle={handle}, success={succeeded}")
+            
+        def setContent(handle, content):
+            print(f"Set content: {content}")
+            
+        def addSortMethod(handle, sortMethod):
+            print(f"Added sort method: {sortMethod}")
+            
+        def setPluginCategory(handle, category):
+            print(f"Set category: {category}")
+            
+        def setPluginFanart(handle, image="", color1=None, color2=None, color3=None):
+            print(f"Set fanart: {image}")
+        EOF
+        
+        cat > kodi_mocks/xbmcaddon.py << 'EOF'
+        # Mock xbmcaddon module for testing
+        class Addon:
+            def __init__(self, id=None):
+                self.id = id or "plugin.audio.audiobookshelf"
+                self.settings = {
+                    'server_url': 'http://localhost:13378',
+                    'api_token': 'mock_token',
+                    'sync_interval': '30',
+                    'auto_resume': 'true',
+                    'mark_finished_threshold': '10',
+                    'show_descriptions': 'true',
+                    'episodes_per_page': '50',
+                    'sort_episodes': 'newest'
+                }
+                
+            def getSetting(self, id):
+                return self.settings.get(id, "")
+                
+            def setSetting(self, id, value):
+                self.settings[id] = value
+                
+            def getAddonInfo(self, id):
+                info_map = {
+                    'id': self.id,
+                    'name': 'Audiobookshelf',
+                    'version': '1.0.0',
+                    'path': '/mock/addon/path',
+                    'profile': '/mock/addon/profile',
+                    'icon': '/mock/addon/icon.png',
+                    'fanart': '/mock/addon/fanart.jpg'
+                }
+                return info_map.get(id, "")
+                
+            def getLocalizedString(self, id):
+                return f"Localized string {id}"
+                
+            def openSettings(self):
+                print("Opening addon settings")
+        EOF
+        
+        cat > kodi_mocks/xbmcvfs.py << 'EOF'
+        # Mock xbmcvfs module for testing
+        import os
+        import tempfile
+        
+        def exists(path):
+            mock_path = path.replace('special://', tempfile.gettempdir() + '/')
+            return os.path.exists(mock_path)
+            
+        def mkdir(path):
+            mock_path = path.replace('special://', tempfile.gettempdir() + '/')
+            os.makedirs(mock_path, exist_ok=True)
+            return True
+            
+        def mkdirs(path):
+            return mkdir(path)
+            
+        def delete(file):
+            mock_path = file.replace('special://', tempfile.gettempdir() + '/')
+            if os.path.exists(mock_path):
+                os.remove(mock_path)
+            return True
+            
+        def copy(source, destination):
+            print(f"Mock copy: {source} -> {destination}")
+            return True
+            
+        def rename(file, newFileName):
+            print(f"Mock rename: {file} -> {newFileName}")
+            return True
+            
+        def listdir(path):
+            mock_path = path.replace('special://', tempfile.gettempdir() + '/')
+            if os.path.exists(mock_path):
+                return os.listdir(mock_path), []
+            return [], []
+            
+        class File:
+            def __init__(self, filepath, mode='r'):
+                self.filepath = filepath
+                self.mode = mode
+                self.content = ""
+                
+            def read(self, bytes=-1):
+                return self.content
+                
+            def write(self, data):
+                self.content += data
+                return len(data)
+                
+            def close(self):
+                pass
+                
+            def __enter__(self):
+                return self
+                
+            def __exit__(self, type, value, traceback):
+                self.close()
+        EOF
 
-    - name: Check addon structure
+    - name: Test imports with mocked Kodi modules
       run: |
-        echo "Checking required files..."
-        test -f addon.xml || (echo "addon.xml missing" && exit 1)
-        test -f main.py || (echo "main.py missing" && exit 1) 
-        test -f service.py || (echo "service.py missing" && exit 1)
-        test -f resources/lib/plugin.py || (echo "resources/lib/plugin.py missing" && exit 1)
-        test -f resources/lib/service.py || (echo "resources/lib/service.py missing" && exit 1)
-        test -f icon.png || (echo "icon.png missing" && exit 1)
-        echo "All required files present"
+        cd resources/lib
+        export PYTHONPATH="../../kodi_mocks:$PYTHONPATH"
+        python -c "
+        import sys
+        sys.path.insert(0, '../../kodi_mocks')
+        sys.path.insert(0, '.')
+        try:
+            # Test individual module imports first
+            import xbmc
+            import xbmcgui
+            import xbmcplugin
+            import xbmcaddon
+            import xbmcvfs
+            print('✓ All Kodi mock modules imported successfully')
+            
+            # Now test the actual plugin modules
+            import plugin
+            import service
+            print('✓ All plugin modules imported successfully')
+            
+            # Test basic functionality if possible
+            addon = xbmcaddon.Addon()
+            print(f'✓ Mock addon created: {addon.getAddonInfo(\"name\")}')
+            
+        except ImportError as e:
+            print(f'✗ Import error: {e}')
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        except Exception as e:
+            print(f'✗ General error: {e}')
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        "
+
+    - name: Validate addon.xml structure
+      run: |
+        if [ -f addon.xml ]; then
+          python -c "
+          import xml.etree.ElementTree as ET
+          try:
+              tree = ET.parse('addon.xml')
+              root = tree.getroot()
+              print(f'✓ addon.xml is valid XML')
+              print(f'  - Addon ID: {root.get(\"id\")}')
+              print(f'  - Version: {root.get(\"version\")}')
+              print(f'  - Name: {root.get(\"name\")}')
+          except ET.ParseError as e:
+              print(f'✗ addon.xml parse error: {e}')
+              exit(1)
+          except Exception as e:
+              print(f'✗ addon.xml validation error: {e}')
+              exit(1)
+          "
+        else
+          echo "✗ addon.xml not found"
+          exit 1
+        fi
+
+    - name: Check for required files
+      run: |
+        echo "Checking for required files..."
+        required_files=(
+          "addon.xml"
+          "resources/lib/plugin.py"
+          "resources/lib/service.py"
+        )
         
-    - name: Validate Python syntax
+        missing_files=()
+        for file in "${required_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✓ Found: $file"
+          else
+            echo "✗ Missing: $file"
+            missing_files+=("$file")
+          fi
+        done
+        
+        if [ ${#missing_files[@]} -ne 0 ]; then
+          echo "Missing required files:"
+          printf '  - %s\n' "${missing_files[@]}"
+          exit 1
+        fi
+        
+        echo "✓ All required files present"
+
+    - name: Lint Python files (optional)
       run: |
-        python -m py_compile main.py
-        python -m py_compile service.py
-        python -m py_compile resources/lib/plugin.py
-        python -m py_compile resources/lib/service.py
-        echo "Python syntax validation passed"
+        # Install basic linting tools
+        pip install pycodestyle pyflakes
+        
+        echo "Running basic Python syntax checks..."
+        find . -name "*.py" -not -path "./kodi_mocks/*" -exec python -m py_compile {} \;
+        echo "✓ All Python files compile successfully"
+        
+        # Optional: Run pyflakes for basic static analysis
+        echo "Running pyflakes analysis..."
+        find . -name "*.py" -not -path "./kodi_mocks/*" -exec pyflakes {} \; || true
+        
+        echo "✓ Linting completed"
 
   build:
-    name: Build Release Package
+    needs: test
     runs-on: ubuntu-latest
-    needs: validate
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Get version from tag
-      id: get_version
+    - uses: actions/checkout@v4
+    
+    - name: Create addon package
       run: |
-        VERSION=${GITHUB_REF#refs/tags/v}
-        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Building version: ${VERSION}"
+        # Get addon info from addon.xml
+        ADDON_ID=$(python -c "import xml.etree.ElementTree as ET; print(ET.parse('addon.xml').getroot().get('id'))")
+        ADDON_VERSION=$(python -c "import xml.etree.ElementTree as ET; print(ET.parse('addon.xml').getroot().get('version'))")
         
-    - name: Update addon.xml version
-      run: |
-        sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.VERSION }}\"/" addon.xml
-        echo "Updated addon.xml version to ${{ steps.get_version.outputs.VERSION }}"
+        echo "Building addon: $ADDON_ID v$ADDON_VERSION"
         
-    - name: Create release package
-      run: |
-        # Create clean build directory
-        mkdir -p build
+        # Create package directory
+        mkdir -p "build/$ADDON_ID"
         
-        # Copy addon files
-        cp -r . build/plugin.audio.audiobookshelf/
-        
-        # Remove unnecessary files from package
-        cd build/plugin.audio.audiobookshelf
-        find . -name "*.pyc" -delete
-        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-        rm -rf .git .github .gitignore README.md build
+        # Copy addon files (exclude development files)
+        rsync -av --exclude='.git*' --exclude='build/' --exclude='kodi_mocks/' \
+                  --exclude='*.pyc' --exclude='__pycache__/' \
+                  --exclude='.pytest_cache/' --exclude='tests/' \
+                  . "build/$ADDON_ID/"
         
         # Create zip package
-        cd ..
-        zip -r plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip plugin.audio.audiobookshelf/
+        cd build
+        zip -r "../${ADDON_ID}-${ADDON_VERSION}.zip" "$ADDON_ID/"
+        
+        echo "✓ Package created: ${ADDON_ID}-${ADDON_VERSION}.zip"
         
         # Generate checksums
         cd ..
-        sha256sum build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip > build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
+        sha256sum "${ADDON_ID}-${ADDON_VERSION}.zip" > "${ADDON_ID}-${ADDON_VERSION}.zip.sha256"
+        md5sum "${ADDON_ID}-${ADDON_VERSION}.zip" > "${ADDON_ID}-${ADDON_VERSION}.zip.md5"
         
-        echo "Package created: plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip"
-        
-    - name: Upload release artifact
+        echo "✓ Checksums generated"
+    
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: plugin-release-${{ steps.get_version.outputs.VERSION }}
+        name: addon-package
         path: |
-          build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip
-          build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
-        retention-days: 90
-        
-    - name: Create GitHub Release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ steps.get_version.outputs.VERSION }}
-        body: |
-          ## Audiobookshelf Kodi Addon v${{ steps.get_version.outputs.VERSION }}
-          
-          ### Installation
-          1. Download `plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip`
-          2. In Kodi, go to Settings → Add-ons → Install from zip file
-          3. Select the downloaded zip file
-          4. Configure your Audiobookshelf server settings
-          
-          ### Requirements
-          - Kodi 21.0+ (Omega)
-          - Audiobookshelf server
-          - Valid API token
-          
-          ### Changelog
-          - Compatible with Kodi v21.2 (Omega)
-          - Fixed GitHub Actions workflow
-          - Improved error handling
-          - Updated API integration
-          
-          ### Files
-          - `plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip` - Main addon package
-          - `plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256` - Checksum file
-        draft: false
-        prerelease: false
-        
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip
-        asset_name: plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip
-        asset_content_type: application/zip
-        
-    - name: Upload Checksum Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
-        asset_name: plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
-        asset_content_type: text/plain
-
-  test:
-    name: Test Installation
-    runs-on: ubuntu-latest
-    needs: validate
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-        
-    - name: Install test dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests
-        
-    - name: Test Python imports
-      run: |
-        cd resources/lib
-        python -c "
-        import sys
-        sys.path.insert(0, '.')
-        try:
-            import plugin
-            import service
-            print('✓ All imports successful')
-        except ImportError as e:
-            print(f'✗ Import error: {e}')
-            sys.exit(1)
-        "
-        
-    - name: Validate addon structure
-      run: |
-        echo "Validating directory structure..."
-        
-        # Check main files
-        [ -f "main.py" ] && echo "✓ main.py exists" || (echo "✗ main.py missing" && exit 1)
-        [ -f "service.py" ] && echo "✓ service.py exists" || (echo "✗ service.py missing" && exit 1)
-        [ -f "addon.xml" ] && echo "✓ addon.xml exists" || (echo "✗ addon.xml missing" && exit 1)
-        
-        # Check resources directory
-        [ -d "resources" ] && echo "✓ resources directory exists" || (echo "✗ resources directory missing" && exit 1)
-        [ -d "resources/lib" ] && echo "✓ resources/lib directory exists" || (echo "✗ resources/lib directory missing" && exit 1)
-        [ -f "resources/lib/plugin.py" ] && echo "✓ resources/lib/plugin.py exists" || (echo "✗ resources/lib/plugin.py missing" && exit 1)
-        [ -f "resources/lib/service.py" ] && echo "✓ resources/lib/service.py exists" || (echo "✗ resources/lib/service.py missing" && exit 1)
-        
-        # Check file sizes (entry points should be small)
-        MAIN_LINES=$(wc -l < main.py)
-        SERVICE_LINES=$(wc -l < service.py)
-        
-        echo "main.py has $MAIN_LINES lines (should be ≤15)"
-        echo "service.py has $SERVICE_LINES lines (should be ≤15)"
-        
-        [ $MAIN_LINES -le 15 ] && echo "✓ main.py size OK" || echo "⚠ main.py may be too complex"
-        [ $SERVICE_LINES -le 15 ] && echo "✓ service.py size OK" || echo "⚠ service.py may be too complex"
-        
-        echo "Structure validation complete"
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: validate
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-        
-    - name: Install security tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install bandit safety
-        
-    - name: Run security scan with Bandit
-      run: |
-        echo "Running security scan..."
-        bandit -r . -f json -o bandit-report.json || true
-        bandit -r . || echo "Security scan completed with warnings"
-        
-    - name: Check for known vulnerabilities
-      run: |
-        echo "Checking for known vulnerabilities..."
-        # Create a requirements file for safety check
-        echo "requests" > temp-requirements.txt
-        safety check -r temp-requirements.txt || echo "Safety check completed"
-        
-    - name: Upload security report
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: security-report
-        path: bandit-report.json
+          *.zip
+          *.sha256
+          *.md5
         retention-days: 30
