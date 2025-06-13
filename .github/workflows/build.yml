@@ -78,8 +78,9 @@ jobs:
 
       - name: Create release package
         run: |
-          mkdir -p build
-          cp -r $(ls -A) build/plugin.audio.audiobookshelf/ build/plugin.audio.audiobookshelf/
+          mkdir -p build/plugin.audio.audiobookshelf
+          shopt -s dotglob
+          cp -r * build/plugin.audio.audiobookshelf || exit 1
           cd build/plugin.audio.audiobookshelf
           find . -name "*.pyc" -delete
           find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
