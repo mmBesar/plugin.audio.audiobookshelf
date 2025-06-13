@@ -21,7 +21,7 @@
             </setting>
         </group>
     </category>
-    
+
     <category id="playback" label="30002">
         <group id="2" label="30020">
             <setting id="sync_interval" type="slider" label="30021" help="30022">
@@ -50,7 +50,7 @@
             </setting>
         </group>
     </category>
-    
+
     <category id="interface" label="30003">
         <group id="3" label="30030">
             <setting id="show_descriptions" type="boolean" label="30031" help="30032">
@@ -76,6 +76,10 @@
                         <option label="30038">1</option>
                     </options>
                 </constraints>
+            </setting>
+            <setting id="sort_newest_first" type="boolean" label="30039">
+                <level>0</level>
+                <default>true</default>
             </setting>
         </group>
     </category>
