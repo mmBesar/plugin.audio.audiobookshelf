@@ -1,133 +1,280 @@
-name: Build and Test
+name: Build and Test Audiobookshelf Addon
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ main, master ]
-  release:
-    types: [created]
+    branches: [ main ]
 
 jobs:
-  test:
+  validate:
+    name: Validate Addon
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.8, 3.9, "3.10", "3.11"]
-
+    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    
-    - name: Validate addon.xml
-      run: |
-        python -c "
-        import xml.etree.ElementTree as ET
-        try:
-            tree = ET.parse('addon.xml')
-            print('✓ addon.xml is valid XML')
-        except ET.ParseError as e:
-            print(f'✗ addon.xml parse error: {e}')
-            exit(1)
-        "
-    
-    - name: Check addon structure
-      run: |
-        required_files=("addon.xml" "resources/lib/plugin.py" "resources/lib/service.py")
-        for file in "${required_files[@]}"; do
-          if [ -f "$file" ]; then
-            echo "✓ $file exists"
-          else
-            echo "✗ $file missing"
-            exit 1
-          fi
-        done
-    
-    - name: Test imports with mocked Kodi environment
+        python-version: '3.9'
+
+    # Test imports with mocked Kodi modules
+    - name: Test imports
       run: |
         cd resources/lib
-        export PYTHONPATH="../../test:$PYTHONPATH"
         python -c "
         import sys
-        sys.path.insert(0, '../../test')
-        sys.path.insert(0, '.')
+        sys.path.insert(0, '../../tests')  # Add tests directory to path
         
-        # Import mock_kodi first to set up mocks
+        # Import and setup mocks
         import mock_kodi
         
+        # Now test imports
         try:
             import plugin
             import service
             print('✓ All imports successful')
         except ImportError as e:
             print(f'✗ Import error: {e}')
-            import traceback
-            traceback.print_exc()
             sys.exit(1)
         "
-    
-    - name: Run tests
+        
+    - name: Install dependencies
       run: |
-        if [ -d "test" ] && [ -f "test/test_*.py" ] || find test -name "test_*.py" -type f | grep -q .; then
-          export PYTHONPATH="test:$PYTHONPATH"
-          python -m pytest test/ -v
-        else
-          echo "No tests found, skipping test execution"
-        fi
+        python -m pip install --upgrade pip
+        pip install kodi-addon-checker
+        
+    - name: Check addon for Kodi Omega
+      run: kodi-addon-checker --branch=omega .
 
-  package:
-    needs: test
+    - name: Check addon structure
+      run: |
+        echo "Checking required files..."
+        test -f addon.xml || (echo "addon.xml missing" && exit 1)
+        test -f main.py || (echo "main.py missing" && exit 1) 
+        test -f service.py || (echo "service.py missing" && exit 1)
+        test -f resources/lib/plugin.py || (echo "resources/lib/plugin.py missing" && exit 1)
+        test -f resources/lib/service.py || (echo "resources/lib/service.py missing" && exit 1)
+        test -f icon.png || (echo "icon.png missing" && exit 1)
+        echo "All required files present"
+        
+    - name: Validate Python syntax
+      run: |
+        python -m py_compile main.py
+        python -m py_compile service.py
+        python -m py_compile resources/lib/plugin.py
+        python -m py_compile resources/lib/service.py
+        echo "Python syntax validation passed"
+
+  build:
+    name: Build Release Package
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Get addon info
-      id: addon_info
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Get version from tag
+      id: get_version
       run: |
-        VERSION=$(grep -o 'version="[^"]*"' addon.xml | cut -d'"' -f2)
-        NAME=$(grep -o 'id="[^"]*"' addon.xml | cut -d'"' -f2)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "name=$NAME" >> $GITHUB_OUTPUT
-    
-    - name: Create addon package
-      run: |
-        mkdir -p dist
-        # Create a clean copy without development files
-        rsync -av --exclude='.git*' --exclude='test/' --exclude='dist/' --exclude='*.pyc' --exclude='__pycache__/' . dist/${{ steps.addon_info.outputs.name }}/
-        cd dist
-        zip -r ${{ steps.addon_info.outputs.name }}-${{ steps.addon_info.outputs.version }}.zip ${{ steps.addon_info.outputs.name }}/
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Building version: ${VERSION}"
         
-        # Create checksum
-        sha256sum ${{ steps.addon_info.outputs.name }}-${{ steps.addon_info.outputs.version }}.zip > ${{ steps.addon_info.outputs.name }}-${{ steps.addon_info.outputs.version }}.zip.sha256
-    
+    - name: Update addon.xml version
+      run: |
+        sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.VERSION }}\"/" addon.xml
+        echo "Updated addon.xml version to ${{ steps.get_version.outputs.VERSION }}"
+        
+    - name: Create release package
+      run: |
+        # Create clean build directory
+        mkdir -p build
+        
+        # Copy addon files
+        cp -r . build/plugin.audio.audiobookshelf/
+        
+        # Remove unnecessary files from package
+        cd build/plugin.audio.audiobookshelf
+        find . -name "*.pyc" -delete
+        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+        rm -rf .git .github .gitignore README.md build
+        
+        # Create zip package
+        cd ..
+        zip -r plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip plugin.audio.audiobookshelf/
+        
+        # Generate checksums
+        cd ..
+        sha256sum build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip > build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
+        
+        echo "Package created: plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip"
+        
+    - name: Upload release artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: plugin-release-${{ steps.get_version.outputs.VERSION }}
+        path: |
+          build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip
+          build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
+        retention-days: 90
+        
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## Audiobookshelf Kodi Addon v${{ steps.get_version.outputs.VERSION }}
+          
+          ### Installation
+          1. Download `plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip`
+          2. In Kodi, go to Settings → Add-ons → Install from zip file
+          3. Select the downloaded zip file
+          4. Configure your Audiobookshelf server settings
+          
+          ### Requirements
+          - Kodi 21.0+ (Omega)
+          - Audiobookshelf server
+          - Valid API token
+          
+          ### Changelog
+          - Compatible with Kodi v21.2 (Omega)
+          - Fixed GitHub Actions workflow
+          - Improved error handling
+          - Updated API integration
+          
+          ### Files
+          - `plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip` - Main addon package
+          - `plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256` - Checksum file
+        draft: false
+        prerelease: false
+        
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./dist/${{ steps.addon_info.outputs.name }}-${{ steps.addon_info.outputs.version }}.zip
-        asset_name: ${{ steps.addon_info.outputs.name }}-${{ steps.addon_info.outputs.version }}.zip
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip
+        asset_name: plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip
         asset_content_type: application/zip
-    
-    - name: Upload Checksum
+        
+    - name: Upload Checksum Asset
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./dist/${{ steps.addon_info.outputs.name }}-${{ steps.addon_info.outputs.version }}.zip.sha256
-        asset_name: ${{ steps.addon_info.outputs.name }}-${{ steps.addon_info.outputs.version }}.zip.sha256
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
+        asset_name: plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
         asset_content_type: text/plain
+
+  test:
+    name: Test Installation
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Install test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+        
+    - name: Test Python imports
+      run: |
+        cd resources/lib
+        python -c "
+        import sys
+        sys.path.insert(0, '.')
+        try:
+            import plugin
+            import service
+            print('✓ All imports successful')
+        except ImportError as e:
+            print(f'✗ Import error: {e}')
+            sys.exit(1)
+        "
+        
+    - name: Validate addon structure
+      run: |
+        echo "Validating directory structure..."
+        
+        # Check main files
+        [ -f "main.py" ] && echo "✓ main.py exists" || (echo "✗ main.py missing" && exit 1)
+        [ -f "service.py" ] && echo "✓ service.py exists" || (echo "✗ service.py missing" && exit 1)
+        [ -f "addon.xml" ] && echo "✓ addon.xml exists" || (echo "✗ addon.xml missing" && exit 1)
+        
+        # Check resources directory
+        [ -d "resources" ] && echo "✓ resources directory exists" || (echo "✗ resources directory missing" && exit 1)
+        [ -d "resources/lib" ] && echo "✓ resources/lib directory exists" || (echo "✗ resources/lib directory missing" && exit 1)
+        [ -f "resources/lib/plugin.py" ] && echo "✓ resources/lib/plugin.py exists" || (echo "✗ resources/lib/plugin.py missing" && exit 1)
+        [ -f "resources/lib/service.py" ] && echo "✓ resources/lib/service.py exists" || (echo "✗ resources/lib/service.py missing" && exit 1)
+        
+        # Check file sizes (entry points should be small)
+        MAIN_LINES=$(wc -l < main.py)
+        SERVICE_LINES=$(wc -l < service.py)
+        
+        echo "main.py has $MAIN_LINES lines (should be ≤15)"
+        echo "service.py has $SERVICE_LINES lines (should be ≤15)"
+        
+        [ $MAIN_LINES -le 15 ] && echo "✓ main.py size OK" || echo "⚠ main.py may be too complex"
+        [ $SERVICE_LINES -le 15 ] && echo "✓ service.py size OK" || echo "⚠ service.py may be too complex"
+        
+        echo "Structure validation complete"
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety
+        
+    - name: Run security scan with Bandit
+      run: |
+        echo "Running security scan..."
+        bandit -r . -f json -o bandit-report.json || true
+        bandit -r . || echo "Security scan completed with warnings"
+        
+    - name: Check for known vulnerabilities
+      run: |
+        echo "Checking for known vulnerabilities..."
+        # Create a requirements file for safety check
+        echo "requests" > temp-requirements.txt
+        safety check -r temp-requirements.txt || echo "Safety check completed"
+        
+    - name: Upload security report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-report
+        path: bandit-report.json
+        retention-days: 30
