@@ -17,24 +17,23 @@ jobs:
   validate:
     name: Validate Addon
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-          
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install kodi-addon-checker
-          
+
       - name: Check addon for Kodi Omega
         run: kodi-addon-checker --branch=omega .
-        
+
       - name: Check addon structure
         run: |
           echo "Checking required files..."
@@ -45,7 +44,7 @@ jobs:
           test -f resources/lib/service.py || (echo "resources/lib/service.py missing" && exit 1)
           test -f icon.png || (echo "icon.png missing" && exit 1)
           echo "All required files present"
-          
+
       - name: Validate Python syntax
         run: |
           python -m py_compile main.py
@@ -59,49 +58,41 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     if: startsWith(github.ref, 'refs/tags/v')
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Get version from tag
         id: get_version
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "TAG_NAME=v${VERSION}" >> $GITHUB_OUTPUT
           echo "Building version: ${VERSION}"
-          
+
       - name: Update addon.xml version
         run: |
           sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.VERSION }}\"/" addon.xml
           echo "Updated addon.xml version to ${{ steps.get_version.outputs.VERSION }}"
-          
+
       - name: Create release package
         run: |
           # Create clean build directory
           mkdir -p build
-          
-          # Copy addon files to properly named directory
+          # Copy addon files
           cp -r . build/plugin.audio.audiobookshelf/
-          
           # Remove unnecessary files from package
           cd build/plugin.audio.audiobookshelf
           find . -name "*.pyc" -delete
           find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
           rm -rf .git .github .gitignore README.md build
-          
           # Create zip package
           cd ..
           zip -r plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip plugin.audio.audiobookshelf/
-          
           # Generate checksums
           cd ..
           sha256sum build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip > build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
-          md5sum build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip > build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.md5
-          
           echo "Package created: plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip"
-          
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
@@ -109,9 +100,8 @@ jobs:
           path: |
             build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip
             build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.sha256
-            build/plugin.audio.audiobookshelf-${{ steps.get_version.outputs.VERSION }}.zip.md5
           retention-days: 90
-          
+
       # FIXED: Use modern release action instead of deprecated ones
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -163,21 +153,92 @@ jobs:
     name: Test Installation
     runs-on: ubuntu-latest
     needs: validate
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-          
+
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
+
+      - name: Setup Kodi mocks
+        run: |
+          cd resources/lib
+          # Create minimal Kodi mocks for import testing
+          cat > xbmc.py << 'EOF'
+          def log(msg, level=0): pass
+          def getInfoLabel(label): return ""
+          def executeJSONRPC(request): return "{}"
+          def sleep(ms): pass
+          def translatePath(path): return path
+          def getCondVisibility(condition): return False
+          LOGDEBUG = 0
+          LOGINFO = 1
+          LOGWARNING = 2
+          LOGERROR = 3
+          EOF
           
+          cat > xbmcgui.py << 'EOF'
+          class ListItem:
+              def __init__(self, label="", label2="", path=""): pass
+              def setArt(self, values): pass
+              def setInfo(self, type, infoLabels): pass
+              def setProperty(self, key, value): pass
+              def getProperty(self, key): return ""
+          class Dialog:
+              def ok(self, heading, message): return True
+              def yesno(self, heading, message): return True
+              def notification(self, heading, message, icon="", time=5000): pass
+          class DialogProgress:
+              def create(self, heading, message=""): pass
+              def update(self, percent, message=""): pass
+              def iscanceled(self): return False
+              def close(self): pass
+          EOF
+          
+          cat > xbmcplugin.py << 'EOF'
+          def addDirectoryItem(handle, url, listitem, isFolder=False, totalItems=0): return True
+          def endOfDirectory(handle, succeeded=True, updateListing=False, cacheToDisc=True): pass
+          def setContent(handle, content): pass
+          def addSortMethod(handle, sortMethod): pass
+          def setPluginCategory(handle, category): pass
+          def setPluginFanart(handle, image="", color1=None, color2=None, color3=None): pass
+          SORT_METHOD_LABEL = 1
+          SORT_METHOD_DATE = 3
+          EOF
+          
+          cat > xbmcaddon.py << 'EOF'
+          class Addon:
+              def __init__(self, id=None): pass
+              def getSetting(self, id): return ""
+              def setSetting(self, id, value): pass
+              def getAddonInfo(self, id): return ""
+              def getLocalizedString(self, id): return ""
+              def openSettings(self): pass
+          EOF
+          
+          cat > xbmcvfs.py << 'EOF'
+          def exists(path): return True
+          def mkdir(path): return True
+          def mkdirs(path): return True
+          def delete(file): return True
+          def copy(source, destination): return True
+          def listdir(path): return [], []
+          class File:
+              def __init__(self, filepath, mode='r'): pass
+              def read(self, bytes=-1): return ""
+              def write(self, data): return len(data)
+              def close(self): pass
+              def __enter__(self): return self
+              def __exit__(self, type, value, traceback): pass
+          EOF
+
       - name: Test Python imports
         run: |
           cd resources/lib
@@ -192,7 +253,7 @@ jobs:
               print(f'✗ Import error: {e}')
               sys.exit(1)
           "
-          
+
       - name: Validate addon structure
         run: |
           echo "Validating directory structure..."
@@ -200,13 +261,11 @@ jobs:
           [ -f "main.py" ] && echo "✓ main.py exists" || (echo "✗ main.py missing" && exit 1)
           [ -f "service.py" ] && echo "✓ service.py exists" || (echo "✗ service.py missing" && exit 1)
           [ -f "addon.xml" ] && echo "✓ addon.xml exists" || (echo "✗ addon.xml missing" && exit 1)
-          
           # Check resources directory
           [ -d "resources" ] && echo "✓ resources directory exists" || (echo "✗ resources directory missing" && exit 1)
           [ -d "resources/lib" ] && echo "✓ resources/lib directory exists" || (echo "✗ resources/lib directory missing" && exit 1)
           [ -f "resources/lib/plugin.py" ] && echo "✓ resources/lib/plugin.py exists" || (echo "✗ resources/lib/plugin.py missing" && exit 1)
           [ -f "resources/lib/service.py" ] && echo "✓ resources/lib/service.py exists" || (echo "✗ resources/lib/service.py missing" && exit 1)
-          
           # Check file sizes (entry points should be small)
           MAIN_LINES=$(wc -l < main.py)
           SERVICE_LINES=$(wc -l < service.py)
@@ -214,41 +273,39 @@ jobs:
           echo "service.py has $SERVICE_LINES lines (should be ≤15)"
           [ $MAIN_LINES -le 15 ] && echo "✓ main.py size OK" || echo "⚠ main.py may be too complex"
           [ $SERVICE_LINES -le 15 ] && echo "✓ service.py size OK" || echo "⚠ service.py may be too complex"
-          
           echo "Structure validation complete"
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
     needs: validate
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-          
+
       - name: Install security tools
         run: |
           python -m pip install --upgrade pip
           pip install bandit safety
-          
+
       - name: Run security scan with Bandit
         run: |
           echo "Running security scan..."
           bandit -r . -f json -o bandit-report.json || true
           bandit -r . || echo "Security scan completed with warnings"
-          
+
       - name: Check for known vulnerabilities
         run: |
           echo "Checking for known vulnerabilities..."
           # Create a requirements file for safety check
           echo "requests" > temp-requirements.txt
           safety check -r temp-requirements.txt || echo "Safety check completed"
-          
+
       - name: Upload security report
         uses: actions/upload-artifact@v4
         if: always()
