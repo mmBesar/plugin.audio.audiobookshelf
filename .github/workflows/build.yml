@@ -73,7 +73,8 @@ jobs:
 
       - name: Update addon.xml version
         run: |
-          sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.VERSION }}\"/" addon.xml
+          sed -i "0,/version=\"[^\"]*\"/s//version=\"${{ steps.get_version.outputs.VERSION }}\"/" addon.xml
+          sed -i 's/xbmc.python\" version=\"[^\"]*\"/xbmc.python\" version=\"3.0.0\"/' addon.xml
           echo "Updated addon.xml version to ${{ steps.get_version.outputs.VERSION }}"
 
       - name: Create release package
