@@ -1,3 +1,5 @@
+# NOT READY YET
+
 # Audiobookshelf Kodi Add-on
 
 A Kodi add-on for streaming podcasts from your self-hosted [Audiobookshelf](https://github.com/advplyr/audiobookshelf) server with full progress synchronization.
