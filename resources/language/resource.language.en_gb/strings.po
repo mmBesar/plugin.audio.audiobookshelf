@@ -1,0 +1,18 @@
+msgid ""
+msgstr ""
+
+msgctxt "#30000"
+msgid "Server URL"
+msgstr ""
+
+msgctxt "#30001"
+msgid "Username"
+msgstr ""
+
+msgctxt "#30002"
+msgid "Password"
+msgstr ""
+
+msgctxt "#30003"
+msgid "Connection"
+msgstr ""

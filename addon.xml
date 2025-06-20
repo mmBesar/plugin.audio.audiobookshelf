@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="plugin.audio.audiobookshelf" name="Audiobookshelf" version="1.0.0" provider-name="mBesar">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+        <import addon="script.module.requests" version="2.25.1"/>
+    </requires>
+    <extension point="xbmc.python.pluginsource" library="main.py">
+        <provides>audio</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en">Audiobookshelf Client</summary>
+        <description lang="en">Stream podcast shows and audiobooks from your Audiobookshelf server</description>
+        <platform>all</platform>
+        <license>GPL-3.0</license>
+        <source>https://github.com/mmBesar/plugin.audio.audiobookshelf</source>
+        <assets>
+        <icon>resources/icon.png</icon>
+        <fanart>resources/fanart.jpg</fanart>
+        </assets>
+    </extension>
+</addon>

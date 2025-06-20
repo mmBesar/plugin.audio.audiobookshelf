@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+    <settings>
+        <category label="Server Settings">
+        <setting id="server_url" type="text" label="Server URL" default="http://localhost:13378" />
+        <setting id="username" type="text" label="Username" default="" />
+        <setting id="password" type="text" label="Password" option="hidden" default="" />
+        <setting id="api_token" type="text" label="API Token" option="hidden" default="" />
+    </category>
+</settings>
